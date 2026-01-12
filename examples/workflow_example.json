@@ -1,0 +1,97 @@
+{
+  "id": "example_workflow_json",
+  "name": "JSON格式示例工作流",
+  "description": "使用JSON格式定义的工作流示例",
+  "version": "1.0.0",
+  "nodes": [
+    {
+      "id": "start",
+      "name": "开始",
+      "type": "start",
+      "description": "工作流开始节点"
+    },
+    {
+      "id": "task1",
+      "name": "任务1",
+      "type": "task",
+      "description": "执行第一个任务",
+      "tool_name": "api_call",
+      "tool_params": {
+        "url": "https://api.example.com/endpoint",
+        "method": "POST",
+        "json_data": {
+          "key": "value"
+        }
+      }
+    },
+    {
+      "id": "condition",
+      "name": "条件判断",
+      "type": "condition",
+      "description": "根据结果判断下一步",
+      "condition_expr": "${task1_result.status_code} == 200"
+    },
+    {
+      "id": "task2_success",
+      "name": "成功处理",
+      "type": "task",
+      "description": "处理成功情况",
+      "tool_name": "data_processing",
+      "tool_params": {
+        "operation": "parse_json",
+        "data": "${task1_result.data}"
+      }
+    },
+    {
+      "id": "task2_fail",
+      "name": "失败处理",
+      "type": "task",
+      "description": "处理失败情况",
+      "tool_name": "file_operation",
+      "tool_params": {
+        "operation": "write",
+        "file_path": "./error.log",
+        "content": "${task1_result.error}"
+      }
+    },
+    {
+      "id": "end",
+      "name": "结束",
+      "type": "end",
+      "description": "工作流结束节点"
+    }
+  ],
+  "edges": [
+    {
+      "source": "start",
+      "target": "task1"
+    },
+    {
+      "source": "task1",
+      "target": "condition"
+    },
+    {
+      "source": "condition",
+      "target": "task2_success",
+      "condition": "${condition_result} == True"
+    },
+    {
+      "source": "condition",
+      "target": "task2_fail",
+      "condition": "${condition_result} == False"
+    },
+    {
+      "source": "task2_success",
+      "target": "end"
+    },
+    {
+      "source": "task2_fail",
+      "target": "end"
+    }
+  ],
+  "metadata": {
+    "author": "System",
+    "created_at": "2024-01-01"
+  }
+}
+

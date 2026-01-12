@@ -1,0 +1,62 @@
+# 示例工作流定义
+id: example_workflow
+name: 示例工作流
+description: 这是一个示例工作流，展示如何定义和执行工作流
+version: "1.0.0"
+
+nodes:
+  - id: start
+    name: 开始
+    type: start
+    description: 工作流开始节点
+  
+  - id: api_call
+    name: 调用API
+    type: task
+    description: 调用外部API
+    tool_name: api_call
+    tool_params:
+      url: "https://api.example.com/data"
+      method: "GET"
+  
+  - id: process_data
+    name: 处理数据
+    type: task
+    description: 处理API返回的数据
+    tool_name: data_processing
+    tool_params:
+      operation: "parse_json"
+      data: "${api_call_result}"
+  
+  - id: save_file
+    name: 保存文件
+    type: task
+    description: 将处理后的数据保存到文件
+    tool_name: file_operation
+    tool_params:
+      operation: "write"
+      file_path: "./output/result.json"
+      content: "${process_data_result}"
+  
+  - id: end
+    name: 结束
+    type: end
+    description: 工作流结束节点
+
+edges:
+  - source: start
+    target: api_call
+  
+  - source: api_call
+    target: process_data
+  
+  - source: process_data
+    target: save_file
+  
+  - source: save_file
+    target: end
+
+metadata:
+  author: "System"
+  created_at: "2024-01-01"
+
