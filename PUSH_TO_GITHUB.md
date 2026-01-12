@@ -11,7 +11,9 @@
 
 访问 https://github.com/new，创建名为 `langchain-agent-workflow` 的仓库
 
-**重要**: 不要勾选 "Initialize this repository with a README"
+**重要**: 
+- 选择 **Private（私有仓库）**
+- 不要勾选 "Initialize this repository with a README"
 
 ### 2. 添加远程仓库并推送
 

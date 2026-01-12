@@ -3,7 +3,7 @@
 ## 方法1: 使用GitHub网页（推荐）
 
 ### 1. 创建仓库
-访问 https://github.com/new，创建名为 `langchain-agent-workflow` 的仓库（**不要**初始化README）
+访问 https://github.com/new，创建名为 `langchain-agent-workflow` 的私有仓库（**不要**初始化README）
 
 ### 2. 推送代码
 在项目目录执行：

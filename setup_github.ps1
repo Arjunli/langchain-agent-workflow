@@ -51,6 +51,7 @@ Write-Host "=== 准备推送代码 ===" -ForegroundColor Green
 Write-Host ""
 Write-Host "请确保已在GitHub创建仓库: https://github.com/new" -ForegroundColor Yellow
 Write-Host "仓库名称: $RepoName" -ForegroundColor Yellow
+Write-Host "仓库类型: Private (私有)" -ForegroundColor Yellow
 Write-Host "不要勾选 'Initialize this repository with a README'" -ForegroundColor Yellow
 Write-Host ""
 $response = Read-Host "仓库已创建? (y/n)"
