@@ -1,17 +1,20 @@
 """知识库存储"""
 from typing import List, Optional, Dict, Any
 from app.models.knowledge import Document, KnowledgeBase, DocumentSearchResult
+from app.utils.cache import LRUCache
+from app.config import settings
 from langchain_openai import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma, FAISS
 from langchain.schema import Document as LangChainDocument
 from datetime import datetime
 import os
+import shutil
 from pathlib import Path
 import json
-import logging
+from app.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class KnowledgeStore:
@@ -54,8 +57,8 @@ class KnowledgeStore:
             length_function=len,
         )
         
-        # 向量存储字典
-        self._vector_stores: Dict[str, Any] = {}
+        # 向量存储字典（使用LRU缓存限制内存）
+        self._vector_stores = LRUCache(max_size=settings.max_vector_stores)
     
     def _load_knowledge_bases(self):
         """加载知识库元数据"""
@@ -104,7 +107,6 @@ class KnowledgeStore:
             # 删除向量存储文件
             vector_path = self.storage_path / f"vectors_{kb_id}"
             if vector_path.exists():
-                import shutil
                 shutil.rmtree(vector_path)
             
             # 删除元数据
@@ -116,7 +118,8 @@ class KnowledgeStore:
     
     def _get_vector_store(self, kb_id: str) -> Optional[Any]:
         """获取向量存储"""
-        if kb_id not in self._vector_stores:
+        vector_store = self._vector_stores.get(kb_id)
+        if vector_store is None:
             kb = self.get_knowledge_base(kb_id)
             if not kb:
                 return None
@@ -127,28 +130,32 @@ class KnowledgeStore:
                 # 使用 FAISS
                 if vector_path.exists():
                     try:
-                        self._vector_stores[kb_id] = FAISS.load_local(
+                        vector_store = FAISS.load_local(
                             str(vector_path),
                             self.embeddings,
                             allow_dangerous_deserialization=True
                         )
                     except Exception as e:
                         logger.error(f"加载 FAISS 向量存储失败: {e}")
-                        self._vector_stores[kb_id] = FAISS.from_texts(
+                        vector_store = FAISS.from_texts(
                             [""], self.embeddings
                         )
                 else:
-                    self._vector_stores[kb_id] = FAISS.from_texts(
+                    vector_store = FAISS.from_texts(
                         [""], self.embeddings
                     )
             else:
                 # 使用 Chroma
-                self._vector_stores[kb_id] = Chroma(
+                vector_store = Chroma(
                     persist_directory=str(vector_path),
                     embedding_function=self.embeddings
                 )
+            
+            # 存储到LRU缓存
+            self._vector_stores.set(kb_id, vector_store)
+            return vector_store
         
-        return self._vector_stores.get(kb_id)
+        return vector_store
     
     def add_document(self, kb_id: str, document: Document) -> Document:
         """添加文档到知识库"""
@@ -189,6 +196,9 @@ class KnowledgeStore:
             vector_store.add_documents(langchain_docs)
             vector_store.persist()
         
+        # 更新缓存（确保LRU顺序正确）
+        self._vector_stores.set(kb_id, vector_store)
+        
         # 更新知识库
         if document.id not in kb.document_ids:
             kb.document_ids.append(document.id)
@@ -210,7 +220,8 @@ class KnowledgeStore:
                 embedding_function=self.embeddings
             )
         
-        self._vector_stores[kb_id] = vector_store
+        # 存储到LRU缓存
+        self._vector_stores.set(kb_id, vector_store)
         return vector_store
     
     def search_documents(

@@ -6,7 +6,12 @@ from app.storage.knowledge_store import KnowledgeStore
 from app.storage.prompt_store import PromptStore
 from app.tools.knowledge_tool import KnowledgeRetrievalTool
 from app.agents.base_agent import BaseAgent
+from app.models.agent import AgentResponse
+from app.config import settings
 import logging
+import asyncio
+import json
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +89,10 @@ class WorkflowAgent(BaseAgent):
             prompt_content=prompt_content,
             prompt_store=prompt_store
         )
+        
+        # 追踪活跃的异步任务
+        self._active_tasks: Dict[str, asyncio.Task] = {}
+        self._task_metadata: Dict[str, Dict[str, Any]] = {}
     
     def _get_knowledge_instructions(self) -> str:
         """获取知识库工具说明"""
@@ -135,8 +144,6 @@ class WorkflowAgent(BaseAgent):
         if not self.workflow_engine:
             return "工作流引擎未配置"
         
-        import json
-        import asyncio
         try:
             # 解析变量（如果是字符串）
             vars_dict = {}
@@ -160,7 +167,19 @@ class WorkflowAgent(BaseAgent):
             
             if loop.is_running():
                 # 如果事件循环正在运行，创建任务但不等待
-                task = asyncio.create_task(self.workflow_engine.execute_workflow(workflow_id, vars_dict))
+                task_id = f"workflow_{workflow_id}_{datetime.now().timestamp()}"
+                task = asyncio.create_task(
+                    self._execute_workflow_with_timeout(workflow_id, vars_dict, task_id)
+                )
+                # 记录任务
+                self._active_tasks[task_id] = task
+                self._task_metadata[task_id] = {
+                    "workflow_id": workflow_id,
+                    "created_at": datetime.now(),
+                    "variables": vars_dict
+                }
+                # 添加完成回调以清理任务
+                task.add_done_callback(lambda t: self._cleanup_task(task_id))
                 return f"工作流 {workflow_id} 已开始执行（异步）"
             else:
                 # 如果事件循环未运行，直接运行
@@ -191,4 +210,85 @@ class WorkflowAgent(BaseAgent):
             response.workflow_triggered = workflow_triggered
         
         return response
+    
+    async def _execute_workflow_with_timeout(
+        self,
+        workflow_id: str,
+        variables: Dict[str, Any],
+        task_id: str
+    ) -> Any:
+        """
+        执行工作流（带超时）
+        
+        Args:
+            workflow_id: 工作流ID
+            variables: 工作流变量
+            task_id: 任务ID
+        
+        Returns:
+            工作流执行结果
+        """
+        try:
+            result = await asyncio.wait_for(
+                self.workflow_engine.execute_workflow(workflow_id, variables),
+                timeout=settings.task_timeout
+            )
+            logger.info(f"工作流执行完成: {workflow_id}, 任务ID: {task_id}")
+            return result
+        except asyncio.TimeoutError:
+            logger.error(f"工作流执行超时: {workflow_id}, 任务ID: {task_id}")
+            raise
+        except Exception as e:
+            logger.error(f"工作流执行失败: {workflow_id}, 任务ID: {task_id}, 错误: {e}", exc_info=True)
+            raise
+    
+    def _cleanup_task(self, task_id: str) -> None:
+        """
+        清理已完成的任务
+        
+        Args:
+            task_id: 任务ID
+        """
+        if task_id in self._active_tasks:
+            del self._active_tasks[task_id]
+        if task_id in self._task_metadata:
+            del self._task_metadata[task_id]
+        logger.debug(f"任务已清理: {task_id}")
+    
+    def cleanup_tasks(self) -> int:
+        """
+        清理已完成的任务
+        
+        Returns:
+            清理的任务数量
+        """
+        completed_tasks = []
+        for task_id, task in list(self._active_tasks.items()):
+            if task.done():
+                completed_tasks.append(task_id)
+        
+        for task_id in completed_tasks:
+            self._cleanup_task(task_id)
+        
+        if completed_tasks:
+            logger.info(f"清理了 {len(completed_tasks)} 个已完成的任务")
+        
+        return len(completed_tasks)
+    
+    def get_active_tasks_count(self) -> int:
+        """获取活跃任务数量"""
+        return len(self._active_tasks)
+    
+    def get_task_stats(self) -> Dict[str, Any]:
+        """获取任务统计信息"""
+        return {
+            "active_tasks": len(self._active_tasks),
+            "task_metadata": {
+                task_id: {
+                    "workflow_id": meta.get("workflow_id"),
+                    "created_at": meta.get("created_at").isoformat() if meta.get("created_at") else None
+                }
+                for task_id, meta in self._task_metadata.items()
+            }
+        }
 

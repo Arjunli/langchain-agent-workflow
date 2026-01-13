@@ -6,12 +6,13 @@ from app.models.task import Task, TaskStatus, TaskType
 from app.config import settings
 from app.utils.logger import get_logger
 from datetime import datetime
+import asyncio
 
 logger = get_logger(__name__)
 
 
 class QueueManager:
-    """消息队列管理器（基于Redis）"""
+    """消息队列管理器（基于Redis，使用连接池）"""
     
     def __init__(self, redis_url: Optional[str] = None):
         """
@@ -22,32 +23,80 @@ class QueueManager:
         """
         self.redis_url = redis_url or getattr(settings, 'redis_url', 'redis://localhost:6379/0')
         self.redis_client: Optional[redis.Redis] = None
+        self._connection_pool: Optional[redis.ConnectionPool] = None
         self._queue_prefix = "task_queue:"
         self._task_prefix = "task:"
         self._status_prefix = "task_status:"
+        self._connected = False
     
     async def connect(self):
-        """连接Redis"""
-        if not self.redis_client:
+        """连接Redis（使用连接池）"""
+        if self._connected and self.redis_client:
+            # 检查连接是否健康
             try:
-                self.redis_client = await redis.from_url(
-                    self.redis_url,
-                    encoding="utf-8",
-                    decode_responses=True
-                )
-                # 测试连接
                 await self.redis_client.ping()
-                logger.info("Redis连接成功")
-            except Exception as e:
-                logger.error(f"Redis连接失败: {e}")
-                raise
+                return
+            except Exception:
+                logger.warning("Redis连接不健康，重新连接")
+                await self.disconnect()
+        
+        try:
+            # 创建连接池
+            self._connection_pool = redis.ConnectionPool.from_url(
+                self.redis_url,
+                encoding="utf-8",
+                decode_responses=True,
+                max_connections=10,  # 最大连接数
+                retry_on_timeout=True
+            )
+            
+            # 创建Redis客户端（使用连接池）
+            self.redis_client = redis.Redis(connection_pool=self._connection_pool)
+            
+            # 测试连接
+            await self.redis_client.ping()
+            self._connected = True
+            logger.info("Redis连接成功（使用连接池）")
+        except Exception as e:
+            logger.error(f"Redis连接失败: {e}")
+            self._connected = False
+            raise
     
     async def disconnect(self):
         """断开Redis连接"""
+        self._connected = False
+        
         if self.redis_client:
-            await self.redis_client.close()
-            self.redis_client = None
-            logger.info("Redis连接已关闭")
+            try:
+                await self.redis_client.close()
+                logger.debug("Redis客户端已关闭")
+            except Exception as e:
+                logger.warning(f"关闭Redis客户端失败: {e}")
+            finally:
+                self.redis_client = None
+        
+        if self._connection_pool:
+            try:
+                await self._connection_pool.disconnect()
+                logger.debug("Redis连接池已关闭")
+            except Exception as e:
+                logger.warning(f"关闭Redis连接池失败: {e}")
+            finally:
+                self._connection_pool = None
+        
+        logger.info("Redis连接已关闭")
+    
+    async def _ensure_connected(self):
+        """确保连接存在且健康"""
+        if not self._connected or not self.redis_client:
+            await self.connect()
+        else:
+            try:
+                await self.redis_client.ping()
+            except Exception:
+                logger.warning("Redis连接不健康，重新连接")
+                await self.disconnect()
+                await self.connect()
     
     def _get_queue_name(self, task_type: TaskType) -> str:
         """获取队列名称"""
@@ -71,8 +120,7 @@ class QueueManager:
         Returns:
             任务ID
         """
-        if not self.redis_client:
-            await self.connect()
+        await self._ensure_connected()
         
         # 更新任务状态和时间戳
         task.status = TaskStatus.QUEUED
@@ -115,8 +163,7 @@ class QueueManager:
         Returns:
             任务对象，如果超时则返回None
         """
-        if not self.redis_client:
-            await self.connect()
+        await self._ensure_connected()
         
         queue_name = self._get_queue_name(task_type)
         
@@ -161,8 +208,7 @@ class QueueManager:
         Returns:
             任务对象，如果不存在则返回None
         """
-        if not self.redis_client:
-            await self.connect()
+        await self._ensure_connected()
         
         task_key = self._get_task_key(task_id)
         task_data = await self.redis_client.get(task_key)
@@ -180,8 +226,7 @@ class QueueManager:
         Args:
             task: 任务对象
         """
-        if not self.redis_client:
-            await self.connect()
+        await self._ensure_connected()
         
         task.updated_at = datetime.now()
         
@@ -242,8 +287,7 @@ class QueueManager:
         Returns:
             任务状态，如果不存在则返回None
         """
-        if not self.redis_client:
-            await self.connect()
+        await self._ensure_connected()
         
         status_key = self._get_status_key(task_id)
         status_str = await self.redis_client.get(status_key)
@@ -266,8 +310,7 @@ class QueueManager:
         Returns:
             队列长度
         """
-        if not self.redis_client:
-            await self.connect()
+        await self._ensure_connected()
         
         queue_name = self._get_queue_name(task_type)
         return await self.redis_client.llen(queue_name)

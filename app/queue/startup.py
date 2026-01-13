@@ -10,6 +10,7 @@ from app.config import settings
 from app.utils.logger import setup_logging, get_logger
 import signal
 import sys
+import asyncio
 
 # 设置日志系统
 setup_logging(

@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4"
     openai_temperature: float = 0.7
+    llm_max_retries: int = 3  # LLM调用最大重试次数
+    llm_retry_delay: float = 1.0  # LLM重试延迟（秒）
+    llm_stream_timeout: int = 300  # LLM流式响应超时（秒）
+    llm_save_partial: bool = True  # 是否保存部分响应（用于中断恢复）
     
     # 数据库配置
     database_url: str = "sqlite:///./workflows.db"
@@ -36,6 +40,13 @@ class Settings(BaseSettings):
     enable_file_logging: bool = True  # 是否启用文件日志
     enable_console_logging: bool = True  # 是否启用控制台日志
     log_json_format: bool = False  # 是否使用JSON格式（文件日志）
+    
+    # 缓存配置
+    max_conversations: int = 1000  # 最大对话缓存数
+    conversation_ttl: int = 3600  # 对话TTL（秒）
+    max_vector_stores: int = 50  # 最大向量存储缓存数
+    task_timeout: int = 3600  # 任务超时时间（秒）
+    websocket_timeout: int = 300  # WebSocket超时时间（秒）
     
     class Config:
         env_file = ".env"

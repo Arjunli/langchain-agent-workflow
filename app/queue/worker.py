@@ -76,7 +76,13 @@ class TaskWorker:
                 pass
         
         self.workers.clear()
-        await self.queue_manager.disconnect()
+        
+        # 确保断开连接（即使之前出错也要执行）
+        try:
+            await self.queue_manager.disconnect()
+        except Exception as e:
+            logger.warning(f"断开队列管理器连接失败: {e}")
+        
         logger.info("所有Worker已停止")
     
     async def _worker_loop(self, task_type: TaskType):

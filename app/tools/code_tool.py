@@ -23,13 +23,28 @@ class CodeExecutionTool(BaseTool):
         if language != "python":
             return {"error": f"不支持的语言: {language}"}
         
-        try:
-            # 创建临时文件
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp:
-                tmp.write(code)
-                tmp_path = tmp.name
-            
+        # 使用context manager确保临时文件总是被清理
+        from contextlib import contextmanager
+        
+        @contextmanager
+        def temp_code_file(code: str):
+            """临时代码文件管理器"""
+            tmp_path = None
             try:
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp:
+                    tmp.write(code)
+                    tmp_path = tmp.name
+                yield tmp_path
+            finally:
+                if tmp_path and os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                        logger.debug(f"临时代码文件已清理: {tmp_path}")
+                    except Exception as e:
+                        logger.warning(f"清理临时代码文件失败: {tmp_path}, 错误: {e}")
+        
+        try:
+            with temp_code_file(code) as tmp_path:
                 # 执行代码（注意：生产环境应该使用沙箱）
                 result = subprocess.run(
                     ["python", tmp_path],
@@ -44,11 +59,6 @@ class CodeExecutionTool(BaseTool):
                     "stderr": result.stderr,
                     "returncode": result.returncode
                 }
-            
-            finally:
-                # 清理临时文件
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
         
         except subprocess.TimeoutExpired:
             return {"error": f"代码执行超时（>{timeout}秒）"}

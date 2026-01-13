@@ -130,9 +130,21 @@ class BaseAgent:
         self,
         message: str,
         context: Optional[Dict[str, Any]] = None,
-        prompt_id: Optional[str] = None
+        prompt_id: Optional[str] = None,
+        stream: bool = False
     ) -> AgentResponse:
-        """处理用户消息"""
+        """
+        处理用户消息
+        
+        Args:
+            message: 用户消息
+            context: 上下文信息
+            prompt_id: Prompt ID
+            stream: 是否使用流式响应
+        
+        Returns:
+            Agent响应
+        """
         try:
             # 如果指定了不同的 prompt_id，重新初始化 Agent
             if prompt_id and prompt_id != self._default_prompt_id:
@@ -151,7 +163,7 @@ class BaseAgent:
                 )
                 self.prompt_store.record_usage(usage)
             
-            # 调用 Agent
+            # 调用 Agent（非流式）
             result = await self.agent_executor.ainvoke({
                 "input": message
             })
@@ -169,5 +181,116 @@ class BaseAgent:
                 message=f"处理消息时出错: {str(e)}",
                 workflow_triggered=False,
                 metadata={"error": str(e)}
+            )
+    
+    async def process_message_stream(
+        self,
+        message: str,
+        context: Optional[Dict[str, Any]] = None,
+        prompt_id: Optional[str] = None,
+        response_id: Optional[str] = None
+    ) -> AgentResponse:
+        """
+        处理用户消息（流式响应，带缓冲区保护）
+        
+        Args:
+            message: 用户消息
+            context: 上下文信息
+            prompt_id: Prompt ID
+            response_id: 响应ID（用于追踪）
+        
+        Returns:
+            Agent响应（包含完整或部分内容）
+        """
+        import uuid
+        from app.utils.llm_response import get_response_handler
+        
+        response_id = response_id or str(uuid.uuid4())
+        conversation_id = context.get("conversation_id") if context else None
+        response_handler = get_response_handler()
+        
+        try:
+            # 如果指定了不同的 prompt_id，重新初始化 Agent
+            if prompt_id and prompt_id != self._default_prompt_id:
+                self._default_prompt_id = prompt_id
+                self._initialize_agent(prompt_id=prompt_id)
+            
+            # 记录 Prompt 使用
+            if prompt_id and self.prompt_store:
+                from app.models.prompt import PromptUsage
+                usage = PromptUsage(
+                    id=str(uuid.uuid4()),
+                    prompt_id=prompt_id,
+                    conversation_id=conversation_id,
+                    variables_used={}
+                )
+                self.prompt_store.record_usage(usage)
+            
+            # 使用流式调用并收集结果
+            buffer = response_handler.create_buffer(response_id, conversation_id)
+            full_output = ""
+            
+            try:
+                async for chunk in self.agent_executor.astream({
+                    "input": message
+                }):
+                    # 提取输出内容
+                    chunk_text = ""
+                    if isinstance(chunk, dict):
+                        # AgentExecutor返回的chunk格式
+                        if "output" in chunk:
+                            chunk_text = str(chunk["output"])
+                        elif "agent" in chunk and "return_values" in chunk["agent"]:
+                            chunk_text = str(chunk["agent"]["return_values"].get("output", ""))
+                        elif "tool" in chunk:
+                            # 工具调用，可以记录但不作为输出
+                            continue
+                    
+                    if chunk_text:
+                        buffer.append(chunk_text)
+                        full_output += chunk_text
+                
+                buffer.mark_complete()
+                
+            except Exception as stream_error:
+                logger.warning(f"流式响应中断: {response_id}, 错误: {stream_error}")
+                buffer.mark_error(str(stream_error))
+                # 继续使用已收集的内容
+            
+            # 返回响应（完整或部分）
+            return AgentResponse(
+                message=buffer.get_content() or full_output,
+                workflow_triggered=False,
+                tool_calls=[],
+                metadata={
+                    "response_id": response_id,
+                    "prompt_id": prompt_id,
+                    "streamed": True,
+                    "complete": buffer.complete,
+                    "partial": not buffer.complete and bool(buffer.get_content())
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Agent 流式处理消息失败: {e}", exc_info=True)
+            # 尝试返回部分响应
+            buffer = response_handler.get_buffer(response_id)
+            if buffer and buffer.get_partial_content():
+                logger.info(f"返回部分响应: {response_id}")
+                return AgentResponse(
+                    message=buffer.get_partial_content(),
+                    workflow_triggered=False,
+                    tool_calls=[],
+                    metadata={
+                        "response_id": response_id,
+                        "error": str(e),
+                        "partial": True
+                    }
+                )
+            
+            return AgentResponse(
+                message=f"处理消息时出错: {str(e)}",
+                workflow_triggered=False,
+                metadata={"error": str(e), "response_id": response_id}
             )
 

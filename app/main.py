@@ -11,6 +11,13 @@ from app.tools.code_tool import CodeExecutionTool
 from app.storage.knowledge_store import KnowledgeStore
 from app.utils.logger import setup_logging, get_logger
 from app.middleware.logging import LoggingMiddleware
+from app.middleware.exception import (
+    exception_handler,
+    http_exception_handler,
+    validation_exception_handler
+)
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # 设置日志系统
 setup_logging(
@@ -41,6 +48,11 @@ app.add_middleware(
 
 # 添加日志中间件（必须在CORS之后，路由之前）
 app.add_middleware(LoggingMiddleware)
+
+# 注册异常处理器
+app.add_exception_handler(Exception, exception_handler)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
 
 # 注册 API 路由
 app.include_router(api_router)
