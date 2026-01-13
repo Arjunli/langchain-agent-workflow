@@ -5,6 +5,7 @@ from .file_tool import FileOperationTool
 from .data_tool import DataProcessingTool
 from .code_tool import CodeExecutionTool
 from .knowledge_tool import KnowledgeRetrievalTool
+from .rpa_tool import RPATool
 
 __all__ = [
     "ToolRegistry",
@@ -14,6 +15,7 @@ __all__ = [
     "DataProcessingTool",
     "CodeExecutionTool",
     "KnowledgeRetrievalTool",
+    "RPATool",
 ]
 
 # 全局工具注册表

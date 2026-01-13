@@ -8,6 +8,7 @@ from app.tools.api_tool import APICallTool
 from app.tools.file_tool import FileOperationTool
 from app.tools.data_tool import DataProcessingTool
 from app.tools.code_tool import CodeExecutionTool
+from app.tools.rpa_tool import RPATool
 from app.storage.knowledge_store import KnowledgeStore
 from app.utils.logger import setup_logging, get_logger
 from app.middleware.logging import LoggingMiddleware
@@ -67,6 +68,12 @@ async def startup_event():
     tool_registry.register(APICallTool())
     tool_registry.register(FileOperationTool())
     tool_registry.register(DataProcessingTool())
+    # 注册 RPA 工具
+    try:
+        tool_registry.register(RPATool())
+        logger.info("RPA 工具已注册")
+    except Exception as e:
+        logger.warning(f"RPA 工具注册失败: {e}，RPA 功能将不可用")
     # 注意：代码执行工具在生产环境需要沙箱，这里仅作为示例
     # tool_registry.register(CodeExecutionTool())
     
