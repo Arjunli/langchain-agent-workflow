@@ -91,6 +91,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         finally:
             # 清除上下文（可选，因为contextvars会自动处理）
             # clear_context()
+            pass
 
 
 class TraceContextMiddleware(BaseHTTPMiddleware):

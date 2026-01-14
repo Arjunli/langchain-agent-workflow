@@ -31,11 +31,11 @@ class ChatAgent:
         """创建新对话"""
         conversation_id = str(uuid.uuid4())
         conversation = Conversation(id=conversation_id)
-        self._conversations[conversation_id] = conversation
+        self._conversations.set(conversation_id, conversation)
         
         # 创建 Agent 状态
         agent_state = AgentState(conversation_id=conversation_id)
-        self._agent_states[conversation_id] = agent_state
+        self._agent_states.set(conversation_id, agent_state)
         
         return conversation
     
@@ -112,7 +112,7 @@ class ChatAgent:
         agent_state = self._agent_states.get(conversation_id)
         if not agent_state:
             agent_state = AgentState(conversation_id=conversation_id)
-            self._agent_states[conversation_id] = agent_state
+            self._agent_states.set(conversation_id, agent_state)
         
         # 构建上下文（包含对话历史）
         chat_context = context or {}
@@ -140,11 +140,18 @@ class ChatAgent:
         # 添加助手消息
         self.add_message(conversation_id, "assistant", response.message)
         
+        # 确定工作流状态
+        workflow_status = None
+        if response.workflow_triggered:
+            workflow_status = response.metadata.get("workflow_status", "running")
+        elif response.workflow_id:
+            workflow_status = response.metadata.get("workflow_status", "completed")
+        
         return {
             "conversation_id": conversation_id,
             "response": response.message,
             "workflow_id": response.workflow_id,
-            "workflow_status": response.workflow_status,
+            "workflow_status": workflow_status,
             "tool_calls": response.tool_calls,
             "prompt_id": prompt_id or response.metadata.get("prompt_id"),
             "partial": response.metadata.get("partial", False),
@@ -214,11 +221,18 @@ class ChatAgent:
         # 添加助手消息（即使是部分响应也保存）
         self.add_message(conversation_id, "assistant", response.message)
         
+        # 确定工作流状态
+        workflow_status = None
+        if response.workflow_triggered:
+            workflow_status = response.metadata.get("workflow_status", "running")
+        elif response.workflow_id:
+            workflow_status = response.metadata.get("workflow_status", "completed")
+        
         return {
             "conversation_id": conversation_id,
             "response": response.message,
             "workflow_id": response.workflow_id,
-            "workflow_status": response.workflow_status,
+            "workflow_status": workflow_status,
             "tool_calls": response.tool_calls,
             "prompt_id": prompt_id or response.metadata.get("prompt_id"),
             "partial": response.metadata.get("partial", False),

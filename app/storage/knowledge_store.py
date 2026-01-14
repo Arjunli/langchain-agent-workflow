@@ -4,9 +4,11 @@ from app.models.knowledge import Document, KnowledgeBase, DocumentSearchResult
 from app.utils.cache import LRUCache
 from app.config import settings
 from langchain_openai import OpenAIEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+# LangChain 1.2.0 导入
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document as LangChainDocument
+
 from langchain_community.vectorstores import Chroma, FAISS
-from langchain.schema import Document as LangChainDocument
 from datetime import datetime
 import os
 import shutil
@@ -39,16 +41,21 @@ class KnowledgeStore:
         self._knowledge_bases: Dict[str, KnowledgeBase] = {}
         self._load_knowledge_bases()
         
-        # 初始化嵌入模型
+        # 初始化嵌入模型（使用 OpenAI）
         try:
             from app.config import settings
-            self.embeddings = OpenAIEmbeddings(
-                model="text-embedding-ada-002",
-                openai_api_key=settings.openai_api_key
-            )
+            if settings.openai_api_key:
+                self.embeddings = OpenAIEmbeddings(
+                    model="text-embedding-ada-002",
+                    openai_api_key=settings.openai_api_key
+                )
+                logger.info("使用 OpenAI 嵌入模型")
+            else:
+                logger.warning("OpenAI API key 未配置，嵌入模型不可用，知识库功能将受限")
+                self.embeddings = None
         except Exception as e:
-            logger.warning(f"无法初始化嵌入模型: {e}，将使用默认配置")
-            self.embeddings = OpenAIEmbeddings(model="text-embedding-ada-002")
+            logger.warning(f"无法初始化嵌入模型: {e}")
+            self.embeddings = None
         
         # 文本分割器
         self.text_splitter = RecursiveCharacterTextSplitter(

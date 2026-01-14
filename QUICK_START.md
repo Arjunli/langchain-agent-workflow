@@ -43,16 +43,17 @@ New-Item -Path .env -ItemType File -Force
 
 ```env
 # OpenAI API 配置（必需）
+LLM_PROVIDER=openai
 OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-4
+OPENAI_MODEL=gpt-3.5-turbo
 OPENAI_TEMPERATURE=0.7
-
-# Redis配置（可选，如果不用消息队列可以跳过）
-REDIS_URL=redis://localhost:6379/0
 
 # 消息队列配置（可选）
 QUEUE_ENABLED=false
 # 如果设置为false，将使用同步执行模式，不需要Redis
+
+# Redis配置（仅在启用消息队列时需要）
+# REDIS_URL=redis://localhost:6379/0
 
 # 日志配置（可选）
 LOG_LEVEL=INFO

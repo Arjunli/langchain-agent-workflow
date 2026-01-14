@@ -1,4 +1,5 @@
 """工作流管理 API"""
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Request
 from app.models.workflow import Workflow
 from app.models.task import Task, TaskType, TaskStatus
@@ -15,7 +16,6 @@ from app.workflows.registry import WorkflowRegistry
 from app.tools import tool_registry
 from app.queue.manager import QueueManager
 from app.config import settings
-from typing import List, Dict, Any, Optional
 from app.utils.logger import get_logger, get_trace_id
 import tempfile
 import os
@@ -102,9 +102,6 @@ async def upload_workflow(request: Request, file: UploadFile = File(...)) -> Bas
                 message="工作流上传成功",
                 request=request
             )
-        
-        finally:
-            os.unlink(tmp_path)
     
     except Exception as e:
         logger.error(f"上传工作流失败: {e}", exc_info=True)
@@ -146,7 +143,7 @@ async def execute_workflow(
     workflow_id: str,
     variables: Dict[str, Any] = None,
     async_execute: bool = Query(default=True, description="是否异步执行"),
-    request: FastAPIRequest = None
+    request: Request = None
 ) -> BaseResponse[Dict[str, Any]]:
     """
     执行工作流

@@ -1,13 +1,24 @@
 """基础 Agent 类"""
 from typing import Dict, Any, Optional, List
-from langchain.agents import AgentExecutor, create_openai_tools_agent
-from langchain_openai import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.tools import Tool
 from app.models.agent import AgentResponse
 from app.storage.prompt_store import PromptStore
 from app.config import settings
 from app.utils.logger import get_logger
+from app.utils.llm_factory import create_llm
+
+# LangChain 1.2.0 导入
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.tools import BaseTool as Tool
+
+# 尝试导入旧版 API，如果失败则使用兼容层
+try:
+    from langchain.agents import AgentExecutor, create_openai_tools_agent
+except ImportError:
+    # 使用兼容层
+    from app.utils.langchain_compat import AgentExecutor, create_openai_tools_agent
+    from app.utils.logger import get_logger
+    logger = get_logger(__name__)
+    logger.warning("使用 LangChain 1.2.0 兼容层")
 
 logger = get_logger(__name__)
 
@@ -37,11 +48,11 @@ class BaseAgent:
         self.prompt_store = prompt_store
         self.prompt_content = prompt_content
         
-        # 初始化 LLM
-        self.llm = ChatOpenAI(
-            model=llm_model or settings.openai_model,
-            temperature=temperature if temperature is not None else settings.openai_temperature,
-            api_key=settings.openai_api_key
+        # 初始化 LLM（支持多种提供商）
+        self.llm = create_llm(
+            model=llm_model,
+            temperature=temperature,
+            provider=settings.llm_provider
         )
         
         self.agent_executor: Optional[AgentExecutor] = None

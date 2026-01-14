@@ -12,7 +12,7 @@ from app.utils.response import (
     bad_request_response
 )
 from app.storage.knowledge_store import KnowledgeStore
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import uuid
 from app.utils.logger import get_logger
 

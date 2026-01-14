@@ -1,6 +1,9 @@
 """工作流 Agent"""
 from typing import Dict, Any, Optional, List
-from langchain.tools import Tool
+
+# LangChain 1.2.0 导入
+from langchain_core.tools import StructuredTool
+from langchain_core.tools import BaseTool as LangChainTool
 from app.workflows.engine import WorkflowEngine
 from app.storage.knowledge_store import KnowledgeStore
 from app.storage.prompt_store import PromptStore
@@ -24,7 +27,7 @@ class WorkflowAgent(BaseAgent):
         workflow_engine: Optional[WorkflowEngine] = None,
         knowledge_store: Optional[KnowledgeStore] = None,
         prompt_store: Optional[PromptStore] = None,
-        tools: Optional[List[Tool]] = None,
+        tools: Optional[List[LangChainTool]] = None,
         prompt_content: Optional[str] = None
     ):
         """
@@ -43,12 +46,12 @@ class WorkflowAgent(BaseAgent):
         # 如果提供了工作流引擎，添加工作流工具
         if workflow_engine:
             self.workflow_engine = workflow_engine
-            workflow_tool = Tool(
+            workflow_tool = StructuredTool.from_function(
                 name="execute_workflow",
                 description="执行指定的工作流。参数: workflow_id (工作流ID), variables (可选的工作流变量字典)",
                 func=self._execute_workflow_tool
             )
-            search_tool = Tool(
+            search_tool = StructuredTool.from_function(
                 name="search_workflows",
                 description="搜索可用的工作流。参数: keyword (搜索关键词)",
                 func=self._search_workflows_tool
@@ -61,27 +64,34 @@ class WorkflowAgent(BaseAgent):
         if knowledge_store:
             self.knowledge_store = knowledge_store
             knowledge_retrieval = KnowledgeRetrievalTool(knowledge_store)
-            knowledge_tool = Tool(
-                name="search_knowledge_base",
-                description="从知识库中检索相关信息。参数: query (查询文本), knowledge_base_id (知识库ID), top_k (返回结果数量，默认5)",
-                func=lambda query, knowledge_base_id, top_k=5: knowledge_retrieval.run(
+            def search_kb_func(query: str, knowledge_base_id: str, top_k: int = 5) -> str:
+                return str(knowledge_retrieval.run(
                     query=query,
                     knowledge_base_id=knowledge_base_id,
                     top_k=top_k
-                )
+                ))
+            
+            knowledge_tool = StructuredTool.from_function(
+                name="search_knowledge_base",
+                description="从知识库中检索相关信息。参数: query (查询文本), knowledge_base_id (知识库ID), top_k (返回结果数量，默认5)",
+                func=search_kb_func
             )
-            list_kb_tool = Tool(
+            
+            def list_kb_func() -> str:
+                return str(knowledge_retrieval.list_knowledge_bases())
+            
+            list_kb_tool = StructuredTool.from_function(
                 name="list_knowledge_bases",
                 description="列出所有可用的知识库",
-                func=lambda: str(knowledge_retrieval.list_knowledge_bases())
+                func=list_kb_func
             )
             agent_tools.extend([knowledge_tool, list_kb_tool])
         else:
             self.knowledge_store = None
         
-        # 获取 Prompt 内容
+        # 获取 Prompt 内容（如果没有提供，使用默认）
         if not prompt_content:
-            prompt_content = self._build_workflow_prompt()
+            prompt_content = self._get_default_workflow_prompt()
         
         # 调用父类初始化
         super().__init__(
@@ -93,6 +103,31 @@ class WorkflowAgent(BaseAgent):
         # 追踪活跃的异步任务
         self._active_tasks: Dict[str, asyncio.Task] = {}
         self._task_metadata: Dict[str, Dict[str, Any]] = {}
+    
+    def _get_default_workflow_prompt(self) -> str:
+        """获取默认工作流 Prompt"""
+        workflow_list = self._get_workflow_list()
+        knowledge_instructions = self._get_knowledge_instructions()
+        
+        return f"""你是一个智能助手，可以帮助用户执行工作流和检索知识库信息。
+
+可用工作流：
+{workflow_list}
+
+工作流工具：
+- search_workflows: 搜索可用的工作流（参数：keyword）
+- execute_workflow: 执行指定的工作流（参数：workflow_id, variables）
+
+{knowledge_instructions}
+
+工作流程：
+1. 理解用户的意图
+2. 如果需要执行工作流，先使用 search_workflows 搜索相关工作流
+3. 使用 execute_workflow 执行找到的工作流
+4. 如果需要参考知识库，使用知识库工具检索信息
+5. 向用户报告结果
+
+请用中文回复用户。如果用户的问题无法通过可用工具解决，请礼貌地告知用户。"""
     
     def _get_knowledge_instructions(self) -> str:
         """获取知识库工具说明"""

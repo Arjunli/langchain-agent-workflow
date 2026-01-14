@@ -12,8 +12,9 @@ class Settings(BaseSettings):
     api_description: str = "基于 LangChain 的 Agent 系统，支持通过文字聊天调用复杂工作流"
     
     # LLM 配置
+    llm_provider: str = "openai"  # 使用 OpenAI
     openai_api_key: Optional[str] = None
-    openai_model: str = "gpt-4"
+    openai_model: str = "gpt-3.5-turbo"  # 默认使用更便宜的模型
     openai_temperature: float = 0.7
     llm_max_retries: int = 3  # LLM调用最大重试次数
     llm_retry_delay: float = 1.0  # LLM重试延迟（秒）
